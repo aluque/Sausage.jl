@@ -7,6 +7,7 @@ using Roots
 using SpecialFunctions
 
 include("naidis.jl")
+include("steady.jl")
 
 R(a, z) = a * sqrt(1 - exp(z / a))
 xf(a, z1, ϕ1) = R(a, z1) * cos(ϕ1)
@@ -23,6 +24,11 @@ function GC(a, z, z1)
     (z ≈ z1) && return 0.0 
     (z - z1) * quadgk(ϕ1 -> (GC1(a, z, z1, ϕ1, R(a, z)) - GC1(a, z, z1, ϕ1, 0)),
                       0, 2π)[1]
+end
+
+function GC_GK(a, z, za, zb)
+    int = quadgk(z1 -> GC(a, z, z1), za, zb)[1]
+    int
 end
 
 
@@ -47,8 +53,18 @@ function GS(a, ϵ, δ, z, z1)
                            U(a, -1, ϵ, z, z1) * (R⁺ + 3R⁻))
 end
 
+function GS_GK(a, ϵ, δ, z, za, zb)
+    int = quadgk(z1 -> GS(a, ϵ, δ, z, z1), za, zb)[1]
+    int
+end
+
 function GR(a, z, z1)
     (z - z1) / ((R(a, z1)^2 + (z - z1)^2)^(3/2))
+end
+
+function GR_GK(a, z, za, zb)
+    int = quadgk(z1 -> (z - z1) / ((R(a, z1)^2 + (z - z1)^2)^(3/2)), za, zb)[1]
+    return int
 end
 
 function solve_velocity_a(eb, a)
@@ -248,74 +264,6 @@ function solve_sausage(a, v, eb; ne=1e20)
 end
 
 
-"""
-   Solve the steady-state sausage model (Luque PSST 2017) to compute a 
-   charge distribution λ, head field eh and dimensionless correction to the
-   surface current moment, ξ1
-"""
-function solve_sausage_attach(a, v, eb; ne0=1e20, τatt=70e-9)
-    L = 0.05
-    Δz =1e-5
-
-    zf = -L:Δz:0.0
-    zc = @. 0.5 * (zf[2:end] + zf[1:end - 1])
-
-    # Last edge removed.
-    zf1 = zf[1:end-1]
-    
-    MC = zeros(length(zf) - 1, length(zc))
-    MS = zeros(length(zf) - 1, length(zc))
-    ME = zeros(length(zf) - 1, length(zc))
-    MD = zeros(length(zf) - 1, length(zc))
-    
-    ξ = 4.0
-
-    ϵ = 1e-5
-
-    latt = v * τatt
-    μe = 0.0372193
-    σ = @. co.e * ne0 * μe * exp(zf1 / latt)
-    
-    δ = ξ * v * co.ϵ0 / σ[end]
-
-    A = @. Δz * σ / (4π * co.ϵ0)
-    @info "The matrix size is" size(MC)
-    
-    Threads.@threads for j in eachindex(zc)
-        z1 = zc[j]
-        for (i, z) in enumerate(zf1)
-            MC[i, j] = A[i] * GC(a, z, z1)
-            MS[i, j] = A[i] * GS(a, ϵ, δ, z, z1)
-            ME[i, j] = Δz / (4π * co.ϵ0) * GR(a, z, z1)
-
-            if i == j
-                MD[i, j] = -0.5 * v
-                # Neumann b.c. at -L
-                if i == 1
-                    MD[i, j] -= 0.5 * v
-                end
-            end
-
-            if i == j + 1
-                MD[i, j] = -0.5 * v
-            end                
-        end
-    end    
-    M = MC + MS + MD
-
-    @info "Matrix assembly completed"
-    
-    I0 = @. σ * π * eb * R(a, zf1)^2 
-
-    λ = -M \ I0
-    
-    eh = eb + (Δz / (4π * co.ϵ0)) * sum(λ .* GR.(Ref(a), 0, zc))
-    ech = eb .+ ME * λ
-
-    ξ1 = Δz * sum(MS * λ) / (π * a^2 * v * co.ϵ0 * eh)
-    
-    (;λ, eh, ξ1, σ, zc, zf)
-end
 
 
 """ 
