@@ -63,21 +63,24 @@ function solve_sausage_attach(a, v, eb; ne0=1e20, τatt=40e-9, L=0.03, Δzmin=1e
 
     λ = -M \ I0
     
-    eh = eb + (Δz / (4π * co.ϵ0)) * sum(λ .* Δz .* GR.(Ref(a), 0.0, zc))
-    el = eb + (Δz / (4π * co.ϵ0)) * sum(λ .* Δz .* GR.(Ref(a), -Δz[end], zc))
+    eh = eb
+    el = eb
 
     #Evaluation of the full axial field
     zaxis = -L/2:Δzeaxis:L/2
     ME = zeros(length(zaxis), length(zc))
 
+    # A small distance to prevent computeing stuff just at the discontinuity
+    δz = 1e-9
     Threads.@threads for j in eachindex(zc)
-        z1 = zc[j]
         for (i, z) in enumerate(zaxis)
             #ME[i, j] = Δz / (4π * co.ϵ0) * GR(a, z, z1)
             # Slight shift to prevent Inf inside the integral.
-            zs = z == 0 ? 1e-9 : z
+            zs = z == 0 ? δz : z
             ME[i, j] = 1 / (4π * co.ϵ0) * GR_GK(a, zs, zf[j], zf[j + 1])
         end
+        eh += (1 / (4π * co.ϵ0)) * λ[j] * GR_GK(a,  δz, zf[j], zf[j + 1])
+        el += (1 / (4π * co.ϵ0)) * λ[j] * GR_GK(a, -δz, zf[j], zf[j + 1])        
     end
     
     eaxis = eb .+ ME * λ
