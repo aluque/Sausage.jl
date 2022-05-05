@@ -10,6 +10,8 @@ include("naidis.jl")
 include("steady.jl")
 
 R(a, z) = a * sqrt(1 - exp(z / a))
+DR(a, z) = -exp(z / a) / sqrt(1 - exp(z / a)) / 2
+R_DR(a, z) = -a * exp(z / a) / 2 
 xf(a, z1, ϕ1) = R(a, z1) * cos(ϕ1)
 ρf(a, z, z1, ϕ1) = sqrt(R(a, z1)^2 * sin(ϕ1)^2 + (z - z1)^2)
 
@@ -43,7 +45,7 @@ function U(a, sg, ϵ, z, z1)
     (z - z1) * quadgk(ϕ1 -> U1(a, sg * ϵ, z, z1, ϕ1), 0, 2π)[1]
 end
 
-function GS(a, ϵ, δ, z, z1)
+function GS(a, ϵ, δ, z, z1, ::Val{:luque})
     (z ≈ z1) && return 0.0 
 
     R⁻ = R(a, z)
@@ -53,10 +55,15 @@ function GS(a, ϵ, δ, z, z1)
                            U(a, -1, ϵ, z, z1) * (R⁺ + 3R⁻))
 end
 
-function GS_GK(a, ϵ, δ, z, za, zb)
-    int = quadgk(z1 -> GS(a, ϵ, δ, z, z1), za, zb)[1]
-    int
+function GS(a, ϵ, δ, z, z1, ::Val{:bouwman})
+    2π * abs(R_DR(a, z)) * δ * (U(a, -1, ϵ, z, z1) + U(a, +1, ϵ, z, z1) / 2) / 3
 end
+
+function GS_GK(a, ϵ, δ, z, za, zb, model)
+    quadgk(z1 -> GS(a, ϵ, δ, z, z1, model), za, zb)[1]
+end
+
+
 
 function GR(a, z, z1)
     (z - z1) / ((R(a, z1)^2 + (z - z1)^2)^(3/2))

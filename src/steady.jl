@@ -9,11 +9,10 @@
    surface current moment, ξ1
 """
 function solve_sausage_attach(a, v, eb; ne0=1e20, τatt=40e-9, L=0.03, Δzmin=1e-5,
-                              nlevs=5, Δzeaxis=5e-7)
+                              nlevs=5, Δzeaxis=5e-7, surf_model=Val(:luque))
 
     zf = refined_mesh(L, Δzmin, nlevs)
     zc = @. 0.5 * (zf[2:end] + zf[1:end - 1])
-    Δz = diff(zf)
     
     # Last edge removed.
     zf1 = zf[1:end-1]
@@ -24,23 +23,24 @@ function solve_sausage_attach(a, v, eb; ne0=1e20, τatt=40e-9, L=0.03, Δzmin=1e
     
     ξ = 4.0
 
-    ϵ = 1e-5
+    ϵ = 1e-7
 
     latt = v * τatt
     μe = 0.0372193
     σ = @. co.e * ne0 * μe * exp(zf1 / latt)
     
     δ = ξ * v * co.ϵ0 / σ[end]
-
+    @info "Parameters" latt ϵ δ
+    
     A = @. σ / (4π * co.ϵ0)
     @info "The matrix size is" size(MC)
     
-    Threads.@threads for j in reverse(eachindex(zc))
+    Threads.@threads for j in eachindex(zc)
         z1 = zc[j]
         for (i, z) in enumerate(zf1)
             Δz = zf[j + 1] - zf[j]
             MC[i, j] = A[i] * GC_GK(a, z, zf[j], zf[j + 1])
-            MS[i, j] = A[i] * GS_GK(a, ϵ, δ, z, zf[j], zf[j + 1])
+            MS[i, j] = A[i] * GS_GK(a, ϵ, δ, z, zf[j], zf[j + 1], surf_model)
 
             if i == j
                 MD[i, j] = -0.5 * v
@@ -72,8 +72,9 @@ function solve_sausage_attach(a, v, eb; ne0=1e20, τatt=40e-9, L=0.03, Δzmin=1e
 
     # A small distance to prevent computeing stuff just at the discontinuity
     δz = 1e-9
-    Threads.@threads for j in eachindex(zc)
-        for (i, z) in enumerate(zaxis)
+    for j in eachindex(zc)
+        Threads.@threads for i in eachindex(zaxis)
+            z = zaxis[i]
             #ME[i, j] = Δz / (4π * co.ϵ0) * GR(a, z, z1)
             # Slight shift to prevent Inf inside the integral.
             zs = z == 0 ? δz : z
@@ -93,7 +94,7 @@ function refined_mesh(L, Δzmin, nlevs)
     s = L / (2^nlevs)
     n = round(Int, s / Δzmin)
     
-    zf = range(-s, 0, length=n + 1)
+    zf = collect(range(-s, 0, length=n + 1))
 
     for l in 1:nlevs
         s *= 2
